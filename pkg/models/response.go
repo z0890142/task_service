@@ -7,5 +7,10 @@ import (
 type Response struct {
 	Code    code.Code
 	Message string
-	Data    interface{}
+	Data    []Task
+}
+
+type ListTaskResp struct {
+	*Response
+	Data []Task
 }

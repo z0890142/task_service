@@ -11,9 +11,9 @@ import (
 
 type DataManager interface {
 	ListTask(ctx context.Context, limit, offset int, order string) ([]models.Task, error)
-	GetTaskById(ctx context.Context, taskId uint64) (*models.Task, error)
+	GetTaskById(ctx context.Context, taskId uint64) (models.Task, error)
 	CheckTaskExist(ctx context.Context, condition map[string]interface{}, task *models.Task) error
-	CreateTask(ctx context.Context, task *models.Task) error
+	CreateTask(ctx context.Context, task []models.Task) error
 	DeleteTask(ctx context.Context, taskId uint64) error
 	UpdateTask(ctx context.Context, task *models.Task) error
 
@@ -25,9 +25,9 @@ type DataManager interface {
 func NewDataManager(client interface{}) DataManager {
 	switch client.(type) {
 	case *gorm.DB:
-		return NewMysqlManager(client.(*gorm.DB))
+		return newMysqlManager(client.(*gorm.DB))
 	case *redis.Client:
-		return NewCacheMgr(client.(*redis.Client))
+		return newCacheMgr(client.(*redis.Client))
 	}
 	return nil
 }

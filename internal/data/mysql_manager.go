@@ -14,7 +14,7 @@ type MysqlMgr struct {
 	client *gorm.DB
 }
 
-func NewMysqlManager(gormClient *gorm.DB) DataManager {
+func newMysqlManager(gormClient *gorm.DB) DataManager {
 	return &MysqlMgr{
 		client: gormClient,
 	}
@@ -31,14 +31,14 @@ func (mgr *MysqlMgr) ListTask(ctx context.Context, limit, offset int, order stri
 	return tasks, nil
 }
 
-func (mgr *MysqlMgr) GetTaskById(ctx context.Context, taskId uint64) (*models.Task, error) {
+func (mgr *MysqlMgr) GetTaskById(ctx context.Context, taskId uint64) (models.Task, error) {
 	task := models.Task{
 		ID: taskId,
 	}
 	if err := mgr.client.First(&task).Error; err != nil {
-		return nil, fmt.Errorf("GetTaskById: %s", err.Error())
+		return models.Task{}, fmt.Errorf("GetTaskById: %s", err.Error())
 	}
-	return &task, nil
+	return task, nil
 }
 
 func (mgr *MysqlMgr) CheckTaskExist(ctx context.Context, condition map[string]interface{}, task *models.Task) error {
@@ -49,8 +49,8 @@ func (mgr *MysqlMgr) CheckTaskExist(ctx context.Context, condition map[string]in
 	return nil
 }
 
-func (mgr *MysqlMgr) CreateTask(ctx context.Context, task *models.Task) error {
-	if err := mgr.client.Create(task).Error; err != nil {
+func (mgr *MysqlMgr) CreateTask(ctx context.Context, tasks []models.Task) error {
+	if err := mgr.client.Create(&tasks).Error; err != nil {
 		return fmt.Errorf("CreateTask: %s", err.Error())
 	}
 	return nil

@@ -11,9 +11,12 @@ import (
 func InitCacheHook(app *Application) error {
 	cacheConfig := config.GetConfig().Cache
 
+	addr := fmt.Sprintf("%s:%v", cacheConfig.Host, cacheConfig.Port)
+
 	redisOpt := &redis.Options{
-		Addr: fmt.Sprintf("%s:%v", cacheConfig.Host, cacheConfig.Port), // Redis 伺服器位址
+		Addr: addr, // Redis 伺服器位址
 	}
+
 	if cacheConfig.Password != "" {
 		redisOpt.Password = cacheConfig.Password
 	}
@@ -23,6 +26,7 @@ func InitCacheHook(app *Application) error {
 	if err != nil {
 		return fmt.Errorf("InitCacheHook: %v", err)
 	}
+
 	app.cacheClient = rdb
 	return nil
 }

@@ -25,7 +25,7 @@ func handleSignals(server *app.Application) {
 	server.Shutdown()
 }
 
-// @title Order Upload API
+// @title Task Service
 // @version 1.0
 func main() {
 	flag.Parse()

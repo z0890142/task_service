@@ -11,6 +11,7 @@ import (
 	"task_service/config"
 	"time"
 
+	"github.com/RediSearch/redisearch-go/redisearch"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -19,15 +20,16 @@ import (
 var defaultApplication *Application
 
 type Application struct {
-	mu          sync.Mutex
-	logger      *zap.SugaredLogger
-	srv         *http.Server
-	config      *config.Config
-	addr        string
-	db          *sql.DB
-	gormClient  *gorm.DB
-	cacheClient *redis.Client
-	redis       *redis.Client
+	mu           sync.Mutex
+	logger       *zap.SugaredLogger
+	srv          *http.Server
+	config       *config.Config
+	addr         string
+	db           *sql.DB
+	gormClient   *gorm.DB
+	cacheClient  *redis.Client
+	searchClient *redisearch.Client
+	redis        *redis.Client
 	// Init and destroy hooks
 	initHooks    []ApplicationHook
 	destroyHooks []ApplicationHook

@@ -16,21 +16,30 @@ import (
 )
 
 type Controller struct {
-	mysqlMgr      data.DataManager
-	cacheMgr      data.DataManager
-	enableCache   bool
-	shuntDownOnce sync.Once
+	mysqlMgr        data.DataManager
+	cacheMgr        data.DataManager
+	enableListCache bool
+	enableGetCache  bool
+	shuntDownOnce   sync.Once
 }
 
 func NewController(mysqlMgr, cacheMgr data.DataManager) *Controller {
 	return &Controller{
-		mysqlMgr:      mysqlMgr,
-		cacheMgr:      cacheMgr,
-		enableCache:   false,
-		shuntDownOnce: sync.Once{},
+		mysqlMgr:        mysqlMgr,
+		cacheMgr:        cacheMgr,
+		enableListCache: false,
+		enableGetCache:  false,
+		shuntDownOnce:   sync.Once{},
 	}
 }
 
+// @Summary list tasks
+// @router /task-service/api/v1/tasks [get]
+// @Param limit query int false "limit"
+// @Param offset query int false "offset"
+// @Param order query string false "order"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.HttpError
 func (ctrl *Controller) ListTask(ginc *gin.Context) {
 
 	if lock, err := ctrl.cacheMgr.Lock(ginc, c.LockKey, 60); err != nil || lock != true {
@@ -39,28 +48,9 @@ func (ctrl *Controller) ListTask(ginc *gin.Context) {
 	}
 	defer ctrl.cacheMgr.ReleaseLock(ginc, c.LockKey)
 
-	limitStr := ginc.Query("limit")
-	offsetStr := ginc.Query("offset")
-	order := ginc.Query("order")
+	limit, offset, order := ctrl.extractPaginationParams(ginc)
 
-	defaultLimit := 20
-	defaultOffset := 0
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit <= 0 {
-		limit = defaultLimit
-	}
-
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil || offset < 0 {
-		offset = defaultOffset
-	}
-
-	if order == "" {
-		order = "id"
-	}
-
-	if ctrl.enableCache {
+	if ctrl.enableListCache {
 		tasks, err := ctrl.cacheMgr.ListTask(ginc, limit, offset, order)
 		if err != nil {
 			logger.GetLoggerWithKeys(map[string]interface{}{
@@ -89,12 +79,25 @@ func (ctrl *Controller) ListTask(ginc *gin.Context) {
 		return
 	}
 
+	if !ctrl.enableListCache {
+		if err := ctrl.cacheMgr.CreateTask(ginc, tasks); err == nil {
+			ctrl.enableListCache = true
+			ctrl.enableGetCache = true
+		}
+	}
+
 	ginc.JSON(http.StatusOK, models.Response{
 		Code:    code.Code_OK,
 		Message: c.Success,
 		Data:    tasks,
 	})
 }
+
+// @Summary get tasks
+// @router /task-service/api/v1/tasks/{taskId} [get]
+// @Param taskId path int true "task ID"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.HttpError
 func (ctrl *Controller) GetTask(ginc *gin.Context) {
 
 	if lock, err := ctrl.cacheMgr.Lock(ginc, c.LockKey, 60); err != nil || lock != true {
@@ -114,21 +117,19 @@ func (ctrl *Controller) GetTask(ginc *gin.Context) {
 		return
 	}
 
-	if ctrl.enableCache {
+	if ctrl.enableGetCache {
 		task, err := ctrl.cacheMgr.GetTaskById(ginc, taskId)
 		if err != nil {
 			logger.GetLoggerWithKeys(map[string]interface{}{
 				"error": err,
 			}).Error("GetTask fail")
-			ctrl.handleError(ginc, err, http.StatusLocked, code.Code_INTERNAL)
-			return
 		}
 
-		if task != nil {
+		if task.ID != 0 {
 			ginc.JSON(http.StatusOK, models.Response{
 				Code:    code.Code_OK,
 				Message: c.Success,
-				Data:    task,
+				Data:    []models.Task{task},
 			})
 			return
 		}
@@ -143,20 +144,27 @@ func (ctrl *Controller) GetTask(ginc *gin.Context) {
 		return
 	}
 
-	if err := ctrl.cacheMgr.CreateTask(ginc, task); err != nil {
+	if err := ctrl.cacheMgr.CreateTask(ginc, []models.Task{task}); err != nil {
 		logger.GetLoggerWithKeys(map[string]interface{}{
 			"error": err,
 		}).Error("insert task into cache fail")
+	} else {
+		ctrl.checkTaskVersion(ginc, task.ID, task.Version)
 	}
 
 	ginc.JSON(http.StatusOK, models.Response{
 		Code:    code.Code_OK,
 		Message: c.Success,
-		Data:    task,
+		Data:    []models.Task{task},
 	})
 
 }
 
+// @Summary create task
+// @router /task-service/api/v1/tasks [post]
+// @param params body models.Task true "task"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.HttpError
 func (ctrl *Controller) CreateTask(ginc *gin.Context) {
 
 	if lock, err := ctrl.cacheMgr.Lock(ginc, c.LockKey, 60); err != nil || lock != true {
@@ -174,7 +182,7 @@ func (ctrl *Controller) CreateTask(ginc *gin.Context) {
 	condition := map[string]interface{}{
 		"name": task.Name,
 	}
-	if task.Tag != nil {
+	if task.Tag != "" {
 		condition["tag"] = task.Tag
 	}
 
@@ -191,7 +199,7 @@ func (ctrl *Controller) CreateTask(ginc *gin.Context) {
 		return
 	}
 
-	if err := ctrl.mysqlMgr.CreateTask(ginc, &task); err != nil {
+	if err := ctrl.mysqlMgr.CreateTask(ginc, []models.Task{task}); err != nil {
 		logger.GetLoggerWithKeys(map[string]interface{}{
 			"error": err,
 		}).Error("ListTask fail")
@@ -199,25 +207,36 @@ func (ctrl *Controller) CreateTask(ginc *gin.Context) {
 		return
 	}
 
-	targetTask, _ := ctrl.mysqlMgr.GetTaskById(ginc, task.ID)
+	if err := ctrl.mysqlMgr.CheckTaskExist(ginc, condition, &task); err != nil {
+		logger.GetLoggerWithKeys(map[string]interface{}{
+			"error": err,
+		}).Error("ListTask fail")
+		ctrl.handleError(ginc, err, http.StatusBadRequest, code.Code_INTERNAL)
+		return
+	}
 
-	if ctrl.enableCache {
-		if err := ctrl.cacheMgr.CreateTask(ginc, targetTask); err != nil {
-			logger.GetLoggerWithKeys(map[string]interface{}{
-				"error": err,
-			}).Error("insert task into cache fail")
-		} else {
-			ctrl.checkTaskVersion(ginc, task.ID, task.Version)
-		}
+	if err := ctrl.cacheMgr.CreateTask(ginc, []models.Task{task}); err != nil {
+		logger.GetLoggerWithKeys(map[string]interface{}{
+			"error": err,
+		}).Error("insert task into cache fail")
+		ctrl.enableGetCache = false
+		ctrl.enableListCache = false
+	} else {
+		ctrl.checkTaskVersion(ginc, task.ID, task.Version)
 	}
 
 	ginc.JSON(http.StatusOK, models.Response{
 		Code:    code.Code_OK,
 		Message: c.Success,
-		Data:    targetTask,
+		Data:    []models.Task{task},
 	})
 }
 
+// @Summary delete task
+// @router /task-service/api/v1/tasks/{taskId} [delete]
+// @Param taskId path int true "task ID"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.HttpError
 func (ctrl *Controller) DeleteTask(ginc *gin.Context) {
 
 	if lock, err := ctrl.cacheMgr.Lock(ginc, c.LockKey, 60); err != nil || lock != true {
@@ -234,10 +253,12 @@ func (ctrl *Controller) DeleteTask(ginc *gin.Context) {
 		return
 	}
 
-	if ctrl.enableCache {
-		if err := ctrl.cacheMgr.DeleteTask(ginc, taskId); err != nil {
-			ctrl.enableCache = false
-		}
+	if err := ctrl.cacheMgr.DeleteTask(ginc, taskId); err != nil {
+		logger.GetLoggerWithKeys(map[string]interface{}{
+			"error": err,
+		}).Error("delete task from cache fail")
+		ctrl.enableGetCache = false
+		ctrl.enableListCache = false
 	}
 
 	if err := ctrl.mysqlMgr.DeleteTask(ginc, taskId); err != nil {
@@ -251,6 +272,12 @@ func (ctrl *Controller) DeleteTask(ginc *gin.Context) {
 	})
 }
 
+// @Summary update task
+// @router /task-service/api/v1/tasks/{taskId} [put]
+// @Param taskId path int true "task ID"
+// @param params body models.Task true "task"
+// @Success 200 {object} models.Response
+// @Failure 400 {object} models.HttpError
 func (ctrl *Controller) UpdateTask(ginc *gin.Context) {
 
 	if lock, err := ctrl.cacheMgr.Lock(ginc, c.LockKey, 60); err != nil || lock != true {
@@ -283,26 +310,28 @@ func (ctrl *Controller) UpdateTask(ginc *gin.Context) {
 	targetTask.Name = task.Name
 	targetTask.Content = task.Content
 	targetTask.Tag = task.Tag
+	targetTask.Version += 1
+	targetTask.Status = task.Status
 
-	if ctrl.enableCache {
-		if err := ctrl.cacheMgr.UpdateTask(ginc, targetTask); err != nil {
-			ctrl.enableCache = false
-		}
-		ginc.JSON(http.StatusOK, models.Response{
-			Code:    code.Code_OK,
-			Message: c.Success,
-			Data:    task,
-		})
+	if err := ctrl.mysqlMgr.UpdateTask(ginc, &targetTask); err != nil {
+		ctrl.handleError(ginc, err, http.StatusInternalServerError, code.Code_INTERNAL)
 		return
 	}
 
-	if err := ctrl.mysqlMgr.UpdateTask(ginc, targetTask); err != nil {
-		ctrl.enableCache = false
+	if err := ctrl.cacheMgr.UpdateTask(ginc, &targetTask); err != nil {
+		logger.GetLoggerWithKeys(map[string]interface{}{
+			"error": err,
+		}).Error("update task from cache fail")
+		ctrl.enableGetCache = false
+		ctrl.enableListCache = false
+	} else {
+		ctrl.checkTaskVersion(ginc, task.ID, task.Version)
 	}
+
 	ginc.JSON(http.StatusOK, models.Response{
 		Code:    code.Code_OK,
 		Message: c.Success,
-		Data:    targetTask,
+		Data:    []models.Task{targetTask},
 	})
 
 }
@@ -332,7 +361,33 @@ func (ctrl *Controller) checkTaskVersion(ctx context.Context, taskId uint64, ver
 			"error":  err,
 			"taskId": taskId,
 		}).Error("checkTaskVersion: delete cache task fail")
-		ctrl.enableCache = false
+		ctrl.enableGetCache = false
+	}
+	ctrl.enableListCache = false
+
+}
+
+func (ctrl *Controller) extractPaginationParams(ginc *gin.Context) (limit, offset int, order string) {
+	limitStr := ginc.Query("limit")
+	offsetStr := ginc.Query("offset")
+	order = ginc.Query("order")
+
+	defaultLimit := 20
+	defaultOffset := 0
+
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = defaultLimit
 	}
 
+	offset, err = strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = defaultOffset
+	}
+
+	if order == "" {
+		order = "id desc"
+	}
+
+	return limit, offset, order
 }

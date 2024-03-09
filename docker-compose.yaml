@@ -16,21 +16,22 @@ services:
     ports:
       - "6379:6379"
 
-  # service-build:
-  #   build:
-  #     context: .
-  #     dockerfile: build/dockerfile
-  #   image: task_service:latest
+  service-build:
+    build:
+      context: .
+      dockerfile: build/dockerfile
+    image: task_service:latest
  
 
-  # task_service:
-  #   image: task_service:latest
-  #   ports:  
-  #     - 8080:8080
-  #   environment:
-  #     - DATABASES.HOST=mysql
-  #   depends_on:
-  #     - mysql
-  #     - redis
-  #   restart: always
+  task_service:
+    image: task_service:latest
+    ports:  
+      - 8080:8080
+    environment:
+      - DATABASE.HOST=mysql
+      - CACHE.HOST=redis
+    depends_on:
+      - mysql
+      - redis
+    restart: always
  

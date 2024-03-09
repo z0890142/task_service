@@ -19,7 +19,7 @@ func initCtrl(app *Application, r *gin.Engine) error {
 	}
 
 	dataMgr := data.NewDataManager(gormCli)
-	cacheMgr := data.NewCacheMgr(app.cacheClient)
+	cacheMgr := data.NewDataManager(app.cacheClient)
 
 	ctrl := controller.NewController(dataMgr, cacheMgr)
 
