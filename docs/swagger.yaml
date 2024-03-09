@@ -1,0 +1,186 @@
+definitions:
+  code.Code:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 16
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    type: integer
+    x-enum-varnames:
+    - Code_OK
+    - Code_CANCELLED
+    - Code_UNKNOWN
+    - Code_INVALID_ARGUMENT
+    - Code_DEADLINE_EXCEEDED
+    - Code_NOT_FOUND
+    - Code_ALREADY_EXISTS
+    - Code_PERMISSION_DENIED
+    - Code_UNAUTHENTICATED
+    - Code_RESOURCE_EXHAUSTED
+    - Code_FAILED_PRECONDITION
+    - Code_ABORTED
+    - Code_OUT_OF_RANGE
+    - Code_UNIMPLEMENTED
+    - Code_INTERNAL
+    - Code_UNAVAILABLE
+    - Code_DATA_LOSS
+  models.HttpError:
+    properties:
+      code:
+        $ref: '#/definitions/code.Code'
+      message:
+        type: string
+    required:
+    - code
+    - message
+    type: object
+  models.Response:
+    properties:
+      code:
+        $ref: '#/definitions/code.Code'
+      data:
+        items:
+          $ref: '#/definitions/models.Task'
+        type: array
+      message:
+        type: string
+    type: object
+  models.Task:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      status:
+        type: integer
+      tag:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+info:
+  contact: {}
+  title: Task Service
+  version: "1.0"
+paths:
+  /task-service/api/v1/tasks:
+    get:
+      parameters:
+      - description: limit
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: order
+        in: query
+        name: order
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.HttpError'
+      summary: list tasks
+    post:
+      parameters:
+      - description: task
+        in: body
+        name: params
+        required: true
+        schema:
+          $ref: '#/definitions/models.Task'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.HttpError'
+      summary: create task
+  /task-service/api/v1/tasks/{taskId}:
+    delete:
+      parameters:
+      - description: task ID
+        in: path
+        name: taskId
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.HttpError'
+      summary: delete task
+    get:
+      parameters:
+      - description: task ID
+        in: path
+        name: taskId
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.HttpError'
+      summary: get tasks
+    put:
+      parameters:
+      - description: task ID
+        in: path
+        name: taskId
+        required: true
+        type: integer
+      - description: task
+        in: body
+        name: params
+        required: true
+        schema:
+          $ref: '#/definitions/models.Task'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.HttpError'
+      summary: update task
+swagger: "2.0"
